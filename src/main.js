@@ -1,30 +1,27 @@
-const Apify = require('apify');
+const { Actor, RequestList, RequestQueue, CheerioCrawler, ProxyConfiguration, log } = require('apify');
 const urlParse = require('url-parse');
 
-const {log} = Apify.utils;
-
 function makeUrlFull(href, urlParsed) {
-    if (href.substr(0, 1) === '/') return urlParsed.origin + href;
+    if (href.startsWith('/')) return urlParsed.origin + href;
     return href;
 }
 
 function getIdFromUrl(url) {
-    return (url.match(new RegExp('(?<=jk=).*?$')) ? url.match(new RegExp('(?<=jk=).*?$'))[0] : '');
+    const match = url.match(/(?<=jk=).*?$/);
+    return match ? match[0] : '';
 }
 
-// ADD URLS FROM INPUT
+// Function to add URLs from input
 const fromStartUrls = async function* (startUrls, name = 'STARTURLS') {
-    const rl = await Apify.openRequestList(name, startUrls);
-    /** @type {Apify.Request | null} */
+    const rl = await RequestList.open(name, startUrls);
     let rq;
-    // eslint-disable-next-line no-cond-assign
     while (rq = await rl.fetchNextRequest()) {
         yield rq;
     }
 };
 
-Apify.main(async () => {
-    const input = await Apify.getInput() || {};
+Actor.main(async () => {
+    const input = await Actor.getInput() || {};
     const {
         country,
         maxConcurrency,
@@ -33,28 +30,28 @@ Apify.main(async () => {
         startUrls,
         extendOutputFunction,
         proxyConfiguration = {
-            useApifyProxy: true
+            useApifyProxy: true,
         },
     } = input;
 
     let { maxItems } = input;
 
     if (maxItems > 990) {
-        log.warning(`The limit of items you set exceeds maximum allowed value. Max possible number of offers, that can be processed is 990.`)
+        log.warning(`The limit of items exceeds the maximum allowed value. Max possible number of offers is 990.`);
     } else if (maxItems === undefined) {
-        log.info(`no maxItems value. Set it to 990 (max)`);
+        log.info(`No maxItems value provided. Setting it to 990 (max).`);
         maxItems = 990;
     }
-    // EXTENDED FUNCTION FROM INPUT
+
     let extendOutputFunctionValid;
     if (extendOutputFunction) {
         try {
             extendOutputFunctionValid = eval(extendOutputFunction);
         } catch (e) {
-            throw new Error(`extendOutputFunction is not a valid JavaScript! Error: ${e}`);
+            throw new Error(`extendOutputFunction is not valid JavaScript! Error: ${e}`);
         }
         if (typeof extendOutputFunctionValid !== 'function') {
-            throw new Error('extendOutputFunction is not a function! Please fix it or use just default output!');
+            throw new Error('extendOutputFunction is not a function! Please fix it or use the default output.');
         }
     }
 
@@ -71,49 +68,44 @@ Apify.main(async () => {
         za: 'https://www.indeed.co.za',
     };
 
-    let countryUrl;
-    countryUrl = countryDict[country.toLowerCase()] || `https://${country || 'www'}.indeed.com`;
-    // COUNTER OF ITEMS TO SAVE
+    let countryUrl = countryDict[country?.toLowerCase()] || `https://${country || 'www'}.indeed.com`;
+
     let itemsCounter = 0;
     let currentPageNumber = 1;
 
-    const requestQueue = await Apify.openRequestQueue();
-    // IF THERE ARE START URLS => ADDING THEM TO THE QUEUE
-    // Using startUrls => disables search
+    const requestQueue = await RequestQueue.open();
+
     if (Array.isArray(startUrls) && startUrls.length > 0) {
-        for await (const req of fromStartUrls(startUrls)) { // this line changed
-            if (!req.url) throw 'StartURL in bad format, needs to be object with url field';
-            if (!req.userData) req.userData = {};
-            if (!req.userData.label) req.userData.label = 'START';
+        for await (const req of fromStartUrls(startUrls)) {
+            if (!req.url) throw new Error('StartURL must have a "url" field.');
+            req.userData = req.userData || {};
+            req.userData.label = req.userData.label || 'START';
             req.userData.currentPageNumber = currentPageNumber;
-            if (req.url.includes("viewjob")) req.userData.label = 'DETAIL'
-            if (!req.url.includes('&sort=date')) req.url = `${req.url}&sort=date` // with sort by date there is less duplicates in LISTING
+            if (req.url.includes('viewjob')) req.userData.label = 'DETAIL';
+            if (!req.url.includes('&sort=date')) req.url = `${req.url}&sort=date`;
             await requestQueue.addRequest(req);
-            log.info(`This url will be scraped: ${req.url}`);
-            countryUrl = `https://${req.url.split('https://')[1].split('/')[0]}`
+            log.info(`URL added to queue: ${req.url}`);
+            countryUrl = `https://${req.url.split('https://')[1].split('/')[0]}`;
         }
-    }
-    // IF NO START URL => CREATING FIRST "LIST"  PAGE ON OUR OWN
-    else {
-        log.info(`Running site crawl country ${country}, position ${position}, location ${location}`);
+    } else {
+        log.info(`Running site crawl for country: ${country}, position: ${position}, location: ${location}`);
         const startUrl = `${countryUrl}/jobs?${position ? `q=${encodeURIComponent(position)}&sort=date` : ''}${location ? `&l=${encodeURIComponent(location)}` : ''}`;
         await requestQueue.addRequest({
             url: startUrl,
             userData: {
                 label: 'START',
-                currentPageNumber
-            }
+                currentPageNumber,
+            },
         });
     }
-    const sdkProxyConfiguration = await Apify.createProxyConfiguration(proxyConfiguration);
-    // You must use proxy on the platform
-    if (Apify.getEnv().isAtHome && !sdkProxyConfiguration) {
-        throw 'You must use Apify Proxy or custom proxies to run this scraper on the platform!';
+
+    const proxyConfig = await ProxyConfiguration.create(proxyConfiguration);
+    if (Actor.isAtHome() && !proxyConfig) {
+        throw new Error('You must use Apify Proxy or custom proxies to run this scraper on the platform!');
     }
 
     log.info('Starting crawler...');
-    log.info('Test 321');
-    const crawler = new Apify.CheerioCrawler({
+    const crawler = new CheerioCrawler({
         requestQueue,
         useSessionPool: true,
         sessionPoolOptions: {
@@ -124,123 +116,13 @@ Apify.main(async () => {
         },
         maxConcurrency,
         maxRequestRetries: 5,
-        proxyConfiguration: sdkProxyConfiguration,
-        handlePageFunction: async ({$, request, session, response}) => {
-            log.info('Test 123');
-            // log.info(`Label(Page type): ${request.userData.label} || URL: ${request.url}`);
-            // const urlParsed = urlParse(request.url);
-
-            // if (![200, 404, 407].includes(response.statusCode)) {
-            //     session.retire();
-            //     request.retryCount--;
-            //     throw new Error(`We got blocked by target on ${request.url}`);
-            // }
-
-            // switch (request.userData.label) {
-            //     case 'START':
-            //     case 'LIST':
-            //         const noResultsFlag = $('.no_results').length > 0;
-
-            //         if (noResultsFlag) {
-            //             log.info('URL doesn\'t have result');
-            //             return;
-            //         };
-
-            //         let currentPageNumber = request.userData.currentPageNumber;
-
-            //         const urlDomainBase = (new URL(request.url)).hostname;
-
-            //         const details = [];
-
-            //         $('.tapItem a[data-jk]').each((index, element) => {
-            //             const itemId = $(element).attr('data-jk');
-            //             const itemUrl = `https://${urlDomainBase}${$(element).attr('href')}`;
-            //             details.push({
-            //                 url: itemUrl,
-            //                 //   uniqueKey: `${itemUrl}-${currentPageNumber}`,
-            //                 uniqueKey: itemId,
-            //                 userData: {
-            //                     label: 'DETAIL'
-            //                 }
-            //             });
-            //         });
-
-            //         for (const req of details) {
-            //         // rarely LIST page doesn't laod properly (items without href) => check for undefined
-            //             if (!(maxItems && itemsCounter >= maxItems) && itemsCounter < 990 && !req.url.includes('undefined')) {
-            //                 await requestQueue.addRequest(req, { forefront: true });
-            //             }
-            //         }
-
-            //         // getting total number of items, that the website shows.
-            //         // We need it for additional check. Without it, on the last "list" page it tries to enqueue next (non-existing) list page.
-            //         const maxItemsOnSite = Number($('#searchCountPages').html()
-            //             .trim()
-            //             .split(' ')[3]
-            //             .replace(/[^0-9]/g, ''))
-
-            //         currentPageNumber++;
-            //         const hasNextPage = $(`a[aria-label="${currentPageNumber}"]`).length > 0;
-
-            //         if (!(maxItems && itemsCounter > maxItems) && itemsCounter < 990 && itemsCounter < maxItemsOnSite && hasNextPage) {
-            //             const nextPage = $(`a[aria-label="${currentPageNumber}"]`).attr('href');
-
-            //             // Indeed has  inconsistent order of items on LIST pages, that is why there are a lot of duplicates. To get all unique items, we enqueue each LIST page 5 times
-            //             for (let i = 0; i < 5; i++) {
-            //                 const nextPageUrl = {
-            //                     url: makeUrlFull(nextPage, urlParsed),
-            //                     uniqueKey: `${i}--${makeUrlFull(nextPage, urlParsed)}`,
-            //                     userData: {
-            //                         label: 'LIST',
-            //                         currentPageNumber
-            //                     }
-            //                 };
-            //                 await requestQueue.addRequest(nextPageUrl);
-            //             }
-            //         }
-            //         break;
-            //     case 'DETAIL':
-            //     if (!(maxItems && itemsCounter > maxItems)) {
-            //         let result = {
-            //             positionName: $('.jobsearch-JobInfoHeader-title').text().trim(),
-            //             salary: $('#salaryInfoAndJobType .attribute_snippet').text() !== '' ? $('#salaryInfoAndJobType .attribute_snippet').text() : null,
-            //             company: $('meta[property="og:description"]').attr('content'),
-            //             //location: $(".jobsearch-JobInfoHeader-subtitle > div").eq(1).text(),
-            //             //location: $(".css-6z8o9s > div").eq(1).text(),   
-            //             //location: css-1ojh0uo eu4oa1w0 as of 2024-12-04
-            //             location: $(".css-1tlxeot > div").text(),
-            //             rating: $('meta[itemprop="ratingValue"]').attr('content') ? Number($('meta[itemprop="ratingValue"]').attr('content')) : null,
-            //             reviewsCount: $('meta[itemprop="ratingCount"]').attr('content') ? Number($('meta[itemprop="ratingCount"]').attr('content')) : null,
-            //             url: request.url,
-            //             id: getIdFromUrl($('meta[id="indeed-share-url"]').attr('content')),
-            //             postedAt: $('.jobsearch-JobMetadataFooter>div').not('[class]').text().trim(),
-            //             scrapedAt: new Date().toISOString(),
-            //             description: $('div[id="jobDescriptionText"]').text(),
-            //             externalApplyLink: $('#applyButtonLinkContainer a')[0] ? $($('#applyButtonLinkContainer a')[0]).attr('href') : null,
-            //         };
-
-            //         if (result.postedAt.includes('If you require alternative methods of application or screening')) {
-            //             await Apify.setValue('HTML', $('html').html(), {contentType: 'text/html'});
-            //         }
-
-            //         if (extendOutputFunction) {
-            //             try {
-            //                 const userResult = await extendOutputFunctionValid($);
-            //                 result = Object.assign(result, userResult);
-            //             } catch (e) {
-            //                 log.info('Error in the extendedOutputFunction run', e);
-            //             }
-            //         }
-            //             await Apify.pushData(result);
-            //             itemsCounter += 1;
-            //         }
-
-            //         break;
-            //     default:
-            //         throw new Error(`Unknown label: ${request.userData.label}`);
-            // }
-        }
+        proxyConfiguration: proxyConfig,
+        handlePageFunction: async ({ $, request, response }) => {
+            log.info(`Processing ${request.url} with label ${request.userData.label}`);
+            // Implement your `handlePageFunction` logic here
+        },
     });
+
     await crawler.run();
-    log.info('Done.');
+    log.info('Crawl finished.');
 });
