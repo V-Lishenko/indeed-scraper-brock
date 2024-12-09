@@ -99,7 +99,7 @@ Actor.main(async () => {
         });
     }
 
-    const proxyConfig = await ProxyConfiguration.create(proxyConfiguration);
+    const proxyConfig = new ProxyConfiguration(proxyConfiguration);
     if (Actor.isAtHome() && !proxyConfig) {
         throw new Error('You must use Apify Proxy or custom proxies to run this scraper on the platform!');
     }
