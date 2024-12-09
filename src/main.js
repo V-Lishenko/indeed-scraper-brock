@@ -100,10 +100,15 @@ Actor.main(async () => {
         });
     }
 
-    const proxyConfig = new ProxyConfiguration({
+    const proxyConfigOptions = {
         groups: proxyConfiguration.apifyProxyGroups || [],
-        countryCode: proxyConfiguration.apifyProxyCountry || null, // Corrected property name
-    });
+    };
+
+    if (typeof proxyConfiguration.apifyProxyCountry === 'string' && proxyConfiguration.apifyProxyCountry.trim() !== '') {
+        proxyConfigOptions.countryCode = proxyConfiguration.apifyProxyCountry;
+    }
+
+    const proxyConfig = new ProxyConfiguration(proxyConfigOptions);
 
     if (Actor.isAtHome() && !proxyConfig) {
         throw new Error('You must use Apify Proxy or custom proxies to run this scraper on the platform!');
