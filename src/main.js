@@ -112,6 +112,7 @@ Apify.main(async () => {
     }
 
     log.info('Starting crawler...');
+    log.info('Test 321');
     const crawler = new Apify.CheerioCrawler({
         requestQueue,
         useSessionPool: true,
