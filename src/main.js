@@ -102,7 +102,7 @@ Actor.main(async () => {
 
     const proxyConfig = new ProxyConfiguration({
         groups: proxyConfiguration.apifyProxyGroups || [],
-        country: proxyConfiguration.apifyProxyCountry || null,
+        countryCode: proxyConfiguration.apifyProxyCountry || null, // Corrected property name
     });
 
     if (Actor.isAtHome() && !proxyConfig) {
