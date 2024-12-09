@@ -125,118 +125,119 @@ Apify.main(async () => {
         maxRequestRetries: 5,
         proxyConfiguration: sdkProxyConfiguration,
         handlePageFunction: async ({$, request, session, response}) => {
-            log.info(`Label(Page type): ${request.userData.label} || URL: ${request.url}`);
-            const urlParsed = urlParse(request.url);
+            log.info('Test 123');
+            // log.info(`Label(Page type): ${request.userData.label} || URL: ${request.url}`);
+            // const urlParsed = urlParse(request.url);
 
-            if (![200, 404, 407].includes(response.statusCode)) {
-                session.retire();
-                request.retryCount--;
-                throw new Error(`We got blocked by target on ${request.url}`);
-            }
+            // if (![200, 404, 407].includes(response.statusCode)) {
+            //     session.retire();
+            //     request.retryCount--;
+            //     throw new Error(`We got blocked by target on ${request.url}`);
+            // }
 
-            switch (request.userData.label) {
-                case 'START':
-                case 'LIST':
-                    const noResultsFlag = $('.no_results').length > 0;
+            // switch (request.userData.label) {
+            //     case 'START':
+            //     case 'LIST':
+            //         const noResultsFlag = $('.no_results').length > 0;
 
-                    if (noResultsFlag) {
-                        log.info('URL doesn\'t have result');
-                        return;
-                    };
+            //         if (noResultsFlag) {
+            //             log.info('URL doesn\'t have result');
+            //             return;
+            //         };
 
-                    let currentPageNumber = request.userData.currentPageNumber;
+            //         let currentPageNumber = request.userData.currentPageNumber;
 
-                    const urlDomainBase = (new URL(request.url)).hostname;
+            //         const urlDomainBase = (new URL(request.url)).hostname;
 
-                    const details = [];
+            //         const details = [];
 
-                    $('.tapItem a[data-jk]').each((index, element) => {
-                        const itemId = $(element).attr('data-jk');
-                        const itemUrl = `https://${urlDomainBase}${$(element).attr('href')}`;
-                        details.push({
-                            url: itemUrl,
-                            //   uniqueKey: `${itemUrl}-${currentPageNumber}`,
-                            uniqueKey: itemId,
-                            userData: {
-                                label: 'DETAIL'
-                            }
-                        });
-                    });
+            //         $('.tapItem a[data-jk]').each((index, element) => {
+            //             const itemId = $(element).attr('data-jk');
+            //             const itemUrl = `https://${urlDomainBase}${$(element).attr('href')}`;
+            //             details.push({
+            //                 url: itemUrl,
+            //                 //   uniqueKey: `${itemUrl}-${currentPageNumber}`,
+            //                 uniqueKey: itemId,
+            //                 userData: {
+            //                     label: 'DETAIL'
+            //                 }
+            //             });
+            //         });
 
-                    for (const req of details) {
-                    // rarely LIST page doesn't laod properly (items without href) => check for undefined
-                        if (!(maxItems && itemsCounter >= maxItems) && itemsCounter < 990 && !req.url.includes('undefined')) {
-                            await requestQueue.addRequest(req, { forefront: true });
-                        }
-                    }
+            //         for (const req of details) {
+            //         // rarely LIST page doesn't laod properly (items without href) => check for undefined
+            //             if (!(maxItems && itemsCounter >= maxItems) && itemsCounter < 990 && !req.url.includes('undefined')) {
+            //                 await requestQueue.addRequest(req, { forefront: true });
+            //             }
+            //         }
 
-                    // getting total number of items, that the website shows.
-                    // We need it for additional check. Without it, on the last "list" page it tries to enqueue next (non-existing) list page.
-                    const maxItemsOnSite = Number($('#searchCountPages').html()
-                        .trim()
-                        .split(' ')[3]
-                        .replace(/[^0-9]/g, ''))
+            //         // getting total number of items, that the website shows.
+            //         // We need it for additional check. Without it, on the last "list" page it tries to enqueue next (non-existing) list page.
+            //         const maxItemsOnSite = Number($('#searchCountPages').html()
+            //             .trim()
+            //             .split(' ')[3]
+            //             .replace(/[^0-9]/g, ''))
 
-                    currentPageNumber++;
-                    const hasNextPage = $(`a[aria-label="${currentPageNumber}"]`).length > 0;
+            //         currentPageNumber++;
+            //         const hasNextPage = $(`a[aria-label="${currentPageNumber}"]`).length > 0;
 
-                    if (!(maxItems && itemsCounter > maxItems) && itemsCounter < 990 && itemsCounter < maxItemsOnSite && hasNextPage) {
-                        const nextPage = $(`a[aria-label="${currentPageNumber}"]`).attr('href');
+            //         if (!(maxItems && itemsCounter > maxItems) && itemsCounter < 990 && itemsCounter < maxItemsOnSite && hasNextPage) {
+            //             const nextPage = $(`a[aria-label="${currentPageNumber}"]`).attr('href');
 
-                        // Indeed has  inconsistent order of items on LIST pages, that is why there are a lot of duplicates. To get all unique items, we enqueue each LIST page 5 times
-                        for (let i = 0; i < 5; i++) {
-                            const nextPageUrl = {
-                                url: makeUrlFull(nextPage, urlParsed),
-                                uniqueKey: `${i}--${makeUrlFull(nextPage, urlParsed)}`,
-                                userData: {
-                                    label: 'LIST',
-                                    currentPageNumber
-                                }
-                            };
-                            await requestQueue.addRequest(nextPageUrl);
-                        }
-                    }
-                    break;
-                case 'DETAIL':
-                if (!(maxItems && itemsCounter > maxItems)) {
-                    let result = {
-                        positionName: $('.jobsearch-JobInfoHeader-title').text().trim(),
-                        salary: $('#salaryInfoAndJobType .attribute_snippet').text() !== '' ? $('#salaryInfoAndJobType .attribute_snippet').text() : null,
-                        company: $('meta[property="og:description"]').attr('content'),
-                        //location: $(".jobsearch-JobInfoHeader-subtitle > div").eq(1).text(),
-                        //location: $(".css-6z8o9s > div").eq(1).text(),   
-                        //location: css-1ojh0uo eu4oa1w0 as of 2024-12-04
-                        location: $(".css-1tlxeot > div").text(),
-                        rating: $('meta[itemprop="ratingValue"]').attr('content') ? Number($('meta[itemprop="ratingValue"]').attr('content')) : null,
-                        reviewsCount: $('meta[itemprop="ratingCount"]').attr('content') ? Number($('meta[itemprop="ratingCount"]').attr('content')) : null,
-                        url: request.url,
-                        id: getIdFromUrl($('meta[id="indeed-share-url"]').attr('content')),
-                        postedAt: $('.jobsearch-JobMetadataFooter>div').not('[class]').text().trim(),
-                        scrapedAt: new Date().toISOString(),
-                        description: $('div[id="jobDescriptionText"]').text(),
-                        externalApplyLink: $('#applyButtonLinkContainer a')[0] ? $($('#applyButtonLinkContainer a')[0]).attr('href') : null,
-                    };
+            //             // Indeed has  inconsistent order of items on LIST pages, that is why there are a lot of duplicates. To get all unique items, we enqueue each LIST page 5 times
+            //             for (let i = 0; i < 5; i++) {
+            //                 const nextPageUrl = {
+            //                     url: makeUrlFull(nextPage, urlParsed),
+            //                     uniqueKey: `${i}--${makeUrlFull(nextPage, urlParsed)}`,
+            //                     userData: {
+            //                         label: 'LIST',
+            //                         currentPageNumber
+            //                     }
+            //                 };
+            //                 await requestQueue.addRequest(nextPageUrl);
+            //             }
+            //         }
+            //         break;
+            //     case 'DETAIL':
+            //     if (!(maxItems && itemsCounter > maxItems)) {
+            //         let result = {
+            //             positionName: $('.jobsearch-JobInfoHeader-title').text().trim(),
+            //             salary: $('#salaryInfoAndJobType .attribute_snippet').text() !== '' ? $('#salaryInfoAndJobType .attribute_snippet').text() : null,
+            //             company: $('meta[property="og:description"]').attr('content'),
+            //             //location: $(".jobsearch-JobInfoHeader-subtitle > div").eq(1).text(),
+            //             //location: $(".css-6z8o9s > div").eq(1).text(),   
+            //             //location: css-1ojh0uo eu4oa1w0 as of 2024-12-04
+            //             location: $(".css-1tlxeot > div").text(),
+            //             rating: $('meta[itemprop="ratingValue"]').attr('content') ? Number($('meta[itemprop="ratingValue"]').attr('content')) : null,
+            //             reviewsCount: $('meta[itemprop="ratingCount"]').attr('content') ? Number($('meta[itemprop="ratingCount"]').attr('content')) : null,
+            //             url: request.url,
+            //             id: getIdFromUrl($('meta[id="indeed-share-url"]').attr('content')),
+            //             postedAt: $('.jobsearch-JobMetadataFooter>div').not('[class]').text().trim(),
+            //             scrapedAt: new Date().toISOString(),
+            //             description: $('div[id="jobDescriptionText"]').text(),
+            //             externalApplyLink: $('#applyButtonLinkContainer a')[0] ? $($('#applyButtonLinkContainer a')[0]).attr('href') : null,
+            //         };
 
-                    if (result.postedAt.includes('If you require alternative methods of application or screening')) {
-                        await Apify.setValue('HTML', $('html').html(), {contentType: 'text/html'});
-                    }
+            //         if (result.postedAt.includes('If you require alternative methods of application or screening')) {
+            //             await Apify.setValue('HTML', $('html').html(), {contentType: 'text/html'});
+            //         }
 
-                    if (extendOutputFunction) {
-                        try {
-                            const userResult = await extendOutputFunctionValid($);
-                            result = Object.assign(result, userResult);
-                        } catch (e) {
-                            log.info('Error in the extendedOutputFunction run', e);
-                        }
-                    }
-                        await Apify.pushData(result);
-                        itemsCounter += 1;
-                    }
+            //         if (extendOutputFunction) {
+            //             try {
+            //                 const userResult = await extendOutputFunctionValid($);
+            //                 result = Object.assign(result, userResult);
+            //             } catch (e) {
+            //                 log.info('Error in the extendedOutputFunction run', e);
+            //             }
+            //         }
+            //             await Apify.pushData(result);
+            //             itemsCounter += 1;
+            //         }
 
-                    break;
-                default:
-                    throw new Error(`Unknown label: ${request.userData.label}`);
-            }
+            //         break;
+            //     default:
+            //         throw new Error(`Unknown label: ${request.userData.label}`);
+            // }
         }
     });
     await crawler.run();
