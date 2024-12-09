@@ -11,7 +11,6 @@ function getIdFromUrl(url) {
     return match ? match[0] : '';
 }
 
-// Function to add URLs from input
 const fromStartUrls = async function* (startUrls, name = 'STARTURLS') {
     const rl = await RequestList.open(name, startUrls);
     let rq;
@@ -30,8 +29,8 @@ Actor.main(async () => {
         startUrls,
         extendOutputFunction,
         proxyConfiguration = {
-            apifyProxyGroups: [], // Default to no specific groups
-            apifyProxyCountry: null, // Default to no specific country
+            apifyProxyGroups: [],
+            apifyProxyCountry: null,
         },
     } = input;
 
