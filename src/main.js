@@ -1,6 +1,6 @@
-import { Actor } from 'apify';
-import { CheerioCrawler } from 'crawlee';
-import urlParse from 'url-parse';
+const { Actor } = require('apify');
+const { CheerioCrawler } = require('crawlee');
+const urlParse = require('url-parse');
 
 function makeUrlFull(href, urlParsed) {
     if (href.startsWith('/')) return urlParsed.origin + href;
