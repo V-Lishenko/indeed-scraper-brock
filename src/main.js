@@ -30,7 +30,8 @@ Actor.main(async () => {
         startUrls,
         extendOutputFunction,
         proxyConfiguration = {
-            useApifyProxy: true,
+            apifyProxyGroups: [], // Default to no specific groups
+            apifyProxyCountry: null, // Default to no specific country
         },
     } = input;
 
@@ -99,7 +100,11 @@ Actor.main(async () => {
         });
     }
 
-    const proxyConfig = new ProxyConfiguration(proxyConfiguration);
+    const proxyConfig = new ProxyConfiguration({
+        groups: proxyConfiguration.apifyProxyGroups || [],
+        country: proxyConfiguration.apifyProxyCountry || null,
+    });
+
     if (Actor.isAtHome() && !proxyConfig) {
         throw new Error('You must use Apify Proxy or custom proxies to run this scraper on the platform!');
     }
