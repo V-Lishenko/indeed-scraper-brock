@@ -128,7 +128,7 @@ Apify.main(async () => {
             log.info(`Label(Page type): ${request.userData.label} || URL: ${request.url}`);
             const urlParsed = urlParse(request.url);
 
-            if (![200, 404].includes(response.statusCode)) {
+            if (![200, 404, 407].includes(response.statusCode)) {
                 session.retire();
                 request.retryCount--;
                 throw new Error(`We got blocked by target on ${request.url}`);
@@ -163,12 +163,12 @@ Apify.main(async () => {
                         });
                     });
 
-                        for (const req of details) {
-                        // rarely LIST page doesn't laod properly (items without href) => check for undefined
-                            if (!(maxItems && itemsCounter >= maxItems) && itemsCounter < 990 && !req.url.includes('undefined')) {
-                                await requestQueue.addRequest(req, { forefront: true });
-                            }
+                    for (const req of details) {
+                    // rarely LIST page doesn't laod properly (items without href) => check for undefined
+                        if (!(maxItems && itemsCounter >= maxItems) && itemsCounter < 990 && !req.url.includes('undefined')) {
+                            await requestQueue.addRequest(req, { forefront: true });
                         }
+                    }
 
                     // getting total number of items, that the website shows.
                     // We need it for additional check. Without it, on the last "list" page it tries to enqueue next (non-existing) list page.
