@@ -37,10 +37,7 @@ Actor.main(async () => {
         location,
         startUrls = [],
         extendOutputFunction,
-        proxyConfiguration = {
-            apifyProxyGroups: [],
-            apifyProxyCountry: null,
-        },
+        proxyConfiguration, // Ignored because we're using a custom proxy
     } = input;
 
     let { maxItems } = input;
@@ -105,37 +102,29 @@ Actor.main(async () => {
         });
     }
 
-    // Configure proxies
-    const proxyConfigOptions = {
-        groups: proxyConfiguration.apifyProxyGroups || [],
-    };
-    if (typeof proxyConfiguration.apifyProxyCountry === 'string' && proxyConfiguration.apifyProxyCountry.trim() !== '') {
-        proxyConfigOptions.countryCode = proxyConfiguration.apifyProxyCountry;
-    }
-    console.log('Proxy configuration options:', proxyConfigOptions);
-
-    const proxyConfig = await Actor.createProxyConfiguration(proxyConfigOptions);
-    console.log('Created Proxy Configuration:', proxyConfig);
-
-    if (Actor.isAtHome() && !proxyConfig) {
-        throw new Error('You must use Apify Proxy or custom proxies to run this scraper on the platform!');
-    }
+    // Configure the custom proxy
+    const proxyUrl = 'http://spzxaz671f:W05Vpv_9ulx7RuwmiF@gate.smartproxy.com:10004';
+    console.log('Using proxy:', proxyUrl);
 
     // Initialize and run the crawler
     console.log('Starting crawler...');
     const crawler = new CheerioCrawler({
         requestQueue,
-        proxyConfiguration: proxyConfig,
         maxConcurrency,
         maxRequestRetries: 5,
         preNavigationHooks: [
-            async ({ request }) => {
+            async ({ request, session }) => {
+                // Attach proxy URL to each request
+                session.setProxyUrl(proxyUrl);
                 request.headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36';
             },
         ],
         handlePageFunction: async ({ $, request, response }) => {
             console.log(`Processing ${request.url} with label ${request.userData.label}`);
             // Implement your scraping logic here
+        },
+        failedRequestHandler: async ({ request }) => {
+            console.error(`Request ${request.url} failed too many times.`);
         },
     });
 
