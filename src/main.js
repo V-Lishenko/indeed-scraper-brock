@@ -2,21 +2,29 @@ const { Actor } = require('apify');
 const { CheerioCrawler } = require('crawlee');
 const urlParse = require('url-parse');
 
+/**
+ * Create full URL from relative paths.
+ */
 function makeUrlFull(href, urlParsed) {
-    if (href.startsWith('/')) return urlParsed.origin + href;
-    return href;
+    return href.startsWith('/') ? urlParsed.origin + href : href;
 }
 
+/**
+ * Extract job ID from URL.
+ */
 function getIdFromUrl(url) {
     const match = url.match(/(?<=jk=).*?$/);
     return match ? match[0] : '';
 }
 
+/**
+ * Helper function to generate requests from start URLs.
+ */
 const fromStartUrls = async function* (startUrls, name = 'STARTURLS') {
-    const rl = await Actor.openRequestList(name, startUrls);
-    let rq;
-    while ((rq = await rl.fetchNextRequest())) {
-        yield rq;
+    const requestList = await Actor.openRequestList(name, startUrls);
+    let request;
+    while ((request = await requestList.fetchNextRequest())) {
+        yield request;
     }
 };
 
@@ -24,10 +32,10 @@ Actor.main(async () => {
     const input = await Actor.getInput() || {};
     const {
         country,
-        maxConcurrency,
+        maxConcurrency = 10, // Default to 10 if not provided
         position,
         location,
-        startUrls,
+        startUrls = [],
         extendOutputFunction,
         proxyConfiguration = {
             apifyProxyGroups: [],
@@ -37,25 +45,29 @@ Actor.main(async () => {
 
     let { maxItems } = input;
 
+    // Validate and adjust maxItems
     if (maxItems > 990) {
-        console.log(`The limit of items exceeds the maximum allowed value. Max possible number of offers is 990.`);
+        console.warn('The limit of items exceeds the maximum allowed value. Limiting to 990.');
+        maxItems = 990;
     } else if (maxItems === undefined) {
-        console.log(`No maxItems value provided. Setting it to 990 (max).`);
+        console.log('No maxItems value provided. Setting it to 990.');
         maxItems = 990;
     }
 
+    // Validate extendOutputFunction
     let extendOutputFunctionValid;
     if (extendOutputFunction) {
         try {
             extendOutputFunctionValid = eval(extendOutputFunction);
-        } catch (e) {
-            throw new Error(`extendOutputFunction is not valid JavaScript! Error: ${e}`);
-        }
-        if (typeof extendOutputFunctionValid !== 'function') {
-            throw new Error('extendOutputFunction is not a function! Please fix it or use the default output.');
+            if (typeof extendOutputFunctionValid !== 'function') {
+                throw new Error('extendOutputFunction is not a valid function.');
+            }
+        } catch (error) {
+            throw new Error(`Invalid extendOutputFunction: ${error.message}`);
         }
     }
 
+    // Country base URLs
     const countryDict = {
         us: 'https://www.indeed.com',
         uk: 'https://www.indeed.co.uk',
@@ -69,60 +81,61 @@ Actor.main(async () => {
         za: 'https://www.indeed.co.za',
     };
 
-    let countryUrl = countryDict[country?.toLowerCase()] || `https://${country || 'www'}.indeed.com`;
+    const countryUrl = countryDict[country?.toLowerCase()] || `https://${country || 'www'}.indeed.com`;
 
     let itemsCounter = 0;
-    let currentPageNumber = 1;
-
     const requestQueue = await Actor.openRequestQueue();
 
-    if (Array.isArray(startUrls) && startUrls.length > 0) {
+    // Process start URLs
+    if (startUrls.length > 0) {
         for await (const req of fromStartUrls(startUrls)) {
             if (!req.url) throw new Error('StartURL must have a "url" field.');
-            req.userData = req.userData || {};
-            req.userData.label = req.userData.label || 'START';
-            req.userData.currentPageNumber = currentPageNumber;
+            req.userData = req.userData || { label: 'START', currentPageNumber: 1 };
             if (req.url.includes('viewjob')) req.userData.label = 'DETAIL';
             if (!req.url.includes('&sort=date')) req.url = `${req.url}&sort=date`;
             await requestQueue.addRequest(req);
-            console.log(`URL added to queue: ${req.url}`);
-            countryUrl = `https://${req.url.split('https://')[1].split('/')[0]}`;
+            console.log(`Added URL to queue: ${req.url}`);
         }
     } else {
-        console.log(`Running site crawl for country: ${country}, position: ${position}, location: ${location}`);
+        console.log(`Generating initial URL for country: ${country}, position: ${position}, location: ${location}`);
         const startUrl = `${countryUrl}/jobs?${position ? `q=${encodeURIComponent(position)}&sort=date` : ''}${location ? `&l=${encodeURIComponent(location)}` : ''}`;
         await requestQueue.addRequest({
             url: startUrl,
-            userData: {
-                label: 'START',
-                currentPageNumber,
-            },
+            userData: { label: 'START', currentPageNumber: 1 },
         });
     }
 
+    // Configure proxies
     const proxyConfigOptions = {
         groups: proxyConfiguration.apifyProxyGroups || [],
     };
-
     if (typeof proxyConfiguration.apifyProxyCountry === 'string' && proxyConfiguration.apifyProxyCountry.trim() !== '') {
         proxyConfigOptions.countryCode = proxyConfiguration.apifyProxyCountry;
     }
+    console.log('Proxy configuration options:', proxyConfigOptions);
 
     const proxyConfig = await Actor.createProxyConfiguration(proxyConfigOptions);
+    console.log('Created Proxy Configuration:', proxyConfig);
 
     if (Actor.isAtHome() && !proxyConfig) {
         throw new Error('You must use Apify Proxy or custom proxies to run this scraper on the platform!');
     }
 
+    // Initialize and run the crawler
     console.log('Starting crawler...');
     const crawler = new CheerioCrawler({
         requestQueue,
         proxyConfiguration: proxyConfig,
         maxConcurrency,
         maxRequestRetries: 5,
+        preNavigationHooks: [
+            async ({ request }) => {
+                request.headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36';
+            },
+        ],
         handlePageFunction: async ({ $, request, response }) => {
             console.log(`Processing ${request.url} with label ${request.userData.label}`);
-            // Implement your `handlePageFunction` logic here
+            // Implement your scraping logic here
         },
     });
 
