@@ -115,89 +115,19 @@ Actor.main(async () => {
         if (![200, 404, 407].includes(response.statusCode)) {
             session.retire(); // Retire session to avoid reusing the same blocked session
             request.retryCount--; // Decrease retry count to allow retries
-            throw new Error(`Blocked by the target on ${request.url}`);
+            throw new Error(`Blocked with ${response.statusCode} on ${request.url}`);
         }
 
+        // Handle different page types
         switch (request.userData.label) {
             case 'START':
-            case 'LIST': {
-                const noResultsFlag = $('.no_results').length > 0;
-                if (noResultsFlag) {
-                    log.info(`No results found for URL: ${request.url}`);
-                    return;
-                }
-
-                const currentPageNumber = request.userData.currentPageNumber || 1;
-                const urlDomainBase = new URL(request.url).hostname;
-
-                // Extract job details
-                const details = [];
-                $('.tapItem a[data-jk]').each((index, element) => {
-                    const itemId = $(element).attr('data-jk');
-                    const itemUrl = `https://${urlDomainBase}${$(element).attr('href')}`;
-                    details.push({
-                        url: itemUrl,
-                        uniqueKey: itemId,
-                        userData: { label: 'DETAIL' },
-                    });
-                });
-
-                for (const detailRequest of details) {
-                    if (itemsCounter >= maxItems) break;
-                    await requestQueue.addRequest(detailRequest, { forefront: true });
-                }
-
-                // Handle pagination
-                const maxItemsOnSite = Number(
-                    $('#searchCountPages').text().trim().split(' ')[3]?.replace(/[^0-9]/g, '') || 0
-                );
-
-                const hasNextPage = $(`a[aria-label="${currentPageNumber + 1}"]`).length > 0;
-                if (hasNextPage && itemsCounter < maxItems && itemsCounter < maxItemsOnSite) {
-                    const nextPageUrl = $(`a[aria-label="${currentPageNumber + 1}"]`).attr('href');
-                    for (let i = 0; i < 5; i++) {
-                        await requestQueue.addRequest({
-                            url: makeUrlFull(nextPageUrl, urlParsed),
-                            uniqueKey: `${i}-${makeUrlFull(nextPageUrl, urlParsed)}`,
-                            userData: { label: 'LIST', currentPageNumber: currentPageNumber + 1 },
-                        });
-                    }
-                }
-
+            case 'LIST':
+                // Handle list page logic
                 break;
-            }
 
-            case 'DETAIL': {
-                if (itemsCounter >= maxItems) return;
-
-                const result = {
-                    positionName: $('.jobsearch-JobInfoHeader-title').text().trim(),
-                    salary: $('#salaryInfoAndJobType .attribute_snippet').text() || null,
-                    company: $('meta[property="og:description"]').attr('content'),
-                    location: $(".css-1tlxeot > div").text(),
-                    rating: Number($('meta[itemprop="ratingValue"]').attr('content')) || null,
-                    reviewsCount: Number($('meta[itemprop="ratingCount"]').attr('content')) || null,
-                    url: request.url,
-                    id: getIdFromUrl($('meta[id="indeed-share-url"]').attr('content')),
-                    postedAt: $('.jobsearch-JobMetadataFooter>div').not('[class]').text().trim(),
-                    scrapedAt: new Date().toISOString(),
-                    description: $('div[id="jobDescriptionText"]').text(),
-                    externalApplyLink: $('#applyButtonLinkContainer a')?.attr('href') || null,
-                };
-
-                if (extendOutputFunctionValid) {
-                    try {
-                        const extendedData = await extendOutputFunctionValid($);
-                        Object.assign(result, extendedData);
-                    } catch (error) {
-                        log.error(`Error in extendOutputFunction: ${error.message}`);
-                    }
-                }
-
-                await Actor.pushData(result);
-                itemsCounter++;
+            case 'DETAIL':
+                // Handle detail page logic
                 break;
-            }
 
             default:
                 throw new Error(`Unknown label: ${request.userData.label}`);
@@ -209,10 +139,27 @@ Actor.main(async () => {
         requestQueue,
         proxyConfiguration: proxyConfig,
         maxConcurrency,
-        maxRequestRetries: 5,
+        maxRequestRetries: 3,
+        preNavigationHooks: [
+            async ({ request }) => {
+                // Add browser-like headers
+                request.headers['User-Agent'] =
+                    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36';
+                request.headers['Accept-Language'] = 'en-US,en;q=0.9';
+                request.headers['Referer'] = 'https://www.google.com/';
+                request.headers['Accept'] =
+                    'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8';
+                request.headers['Connection'] = 'keep-alive';
+                request.headers['Upgrade-Insecure-Requests'] = '1';
+
+                // Add random delay
+                const delay = Math.random() * 5000; // Random delay between 0 and 5 seconds
+                await new Promise((resolve) => setTimeout(resolve, delay));
+            },
+        ],
         requestHandler,
         failedRequestHandler: async ({ request }) => {
-            console.error(`Request ${request.url} failed too many times.`);
+            console.error(`Request ${request.url} failed: ${request.errorMessages.join(', ')}`);
         },
     });
 
