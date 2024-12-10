@@ -1,5 +1,5 @@
 const { Actor } = require('apify');
-const { CheerioCrawler } = require('crawlee');
+const { CheerioCrawler, ProxyConfiguration } = require('crawlee');
 const urlParse = require('url-parse');
 
 /**
@@ -37,7 +37,6 @@ Actor.main(async () => {
         location,
         startUrls = [],
         extendOutputFunction,
-        proxyConfiguration, // Ignored because we're using a custom proxy
     } = input;
 
     let { maxItems } = input;
@@ -103,23 +102,24 @@ Actor.main(async () => {
     }
 
     // Configure the custom proxy
-    const proxyUrl = 'http://spzxaz671f:W05Vpv_9ulx7RuwmiF@gate.smartproxy.com:10004';
-    console.log('Using proxy:', proxyUrl);
+    const proxyConfig = new ProxyConfiguration({
+        proxyUrls: ['http://spzxaz671f:W05Vpv_9ulx7RuwmiF@gate.smartproxy.com:10004'],
+    });
+
+    console.log('Starting crawler with proxy:', proxyConfig.proxyUrls[0]);
 
     // Initialize and run the crawler
-    console.log('Starting crawler...');
     const crawler = new CheerioCrawler({
         requestQueue,
+        proxyConfiguration: proxyConfig,
         maxConcurrency,
         maxRequestRetries: 5,
         preNavigationHooks: [
             async ({ request }) => {
-                // Set proxy URL for each request
-                request.proxyUrl = proxyUrl;
                 request.headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36';
             },
         ],
-        handlePageFunction: async ({ $, request, response }) => {
+        handlePageFunction: async ({ $, request }) => {
             console.log(`Processing ${request.url} with label ${request.userData.label}`);
             // Implement your scraping logic here
         },
